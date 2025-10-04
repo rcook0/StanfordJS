@@ -1,0 +1,13 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.11", "cmake>=3.25", "ninja", "packaging"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "sjs-core"
+version = "0.1.0"
+description = "SJS core (C++ with Python bindings)"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24"]
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
