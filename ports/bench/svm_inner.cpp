@@ -2,8 +2,6 @@
 #include "svm/model.hpp"
 #include "util/profiler.hpp"
 #include <Eigen/Dense>
-#include <random>
-#include <vector>
 #include <iostream>
 
 using namespace sjs;
@@ -11,7 +9,6 @@ using namespace sjs;
 int main() {
   const int n = 5000, d = 64;
   Eigen::MatrixXd X = Eigen::MatrixXd::Random(n, d);
-  Eigen::VectorXi y(n); for (int i=0;i<n;++i) y(i) = (i%2==0)?1:-1;
   RBFKernel k(0.1);
   SVMModel m;
   m.support_vectors = X.topRows(256);

@@ -1,15 +1,4 @@
-# sjs-port skeleton
+# sjs-core (C++ + Python) — Full Scaffold
 
-
-## Dev quickstart
-```bash
-./scripts/dev.sh
-```
-
-## Microbenchmark
-Build with profiling:
-```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DSJS_PROFILE=ON
-cmake --build build -j
-./build/svm_inner
-```
+C++ core (Eigen), pybind11 bindings, Python wheels (scikit-build-core).
+Includes opt-in profiler, microbench, CLI scripts, and smoke tests.
