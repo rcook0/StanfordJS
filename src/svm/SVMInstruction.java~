@@ -1,0 +1,1263 @@
+/*
+ * File: SVMInstruction.java
+ * -------------------------
+ * This file defines the instructions for the SVM.
+ */
+
+package edu.stanford.cs.svm;
+
+import edu.stanford.cs.exp.Value;
+import edu.stanford.cs.parser.CodeVector;
+import edu.stanford.cs.parser.SyntaxError;
+import edu.stanford.cs.tokenscanner.TokenScanner;
+import java.util.TreeMap;
+
+public abstract class SVMInstruction {
+
+   public SVMInstruction(String name, int code) {
+      this.name = name;
+      this.code = code;
+   }
+
+   public String getName() {
+      return name;
+   }
+
+   public int getCode() {
+      return code;
+   }
+
+   public void execute(SVM svm, int addr) {
+      throw new RuntimeException("Not yet implemented");
+   }
+
+   public String unparse(SVM svm, int addr) {
+      return name;
+   }
+
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      cv.addWord(code << 24);
+   }
+
+   public static SVMInstruction lookup(String name) {
+      if (instructionTable == null) initializeInstructionTable();
+      return instructionTable.get(name);
+   }
+
+   public static SVMInstruction get(int code) {
+      if (instructionTable == null) initializeInstructionTable();
+      return codeTable.get(code);
+   }
+
+   private static void initializeInstructionTable() {
+      instructionTable = new TreeMap<String,SVMInstruction>();
+      codeTable = new TreeMap<Integer,SVMInstruction>();
+      define(new END_Ins());
+      define(new VERSION_Ins());
+      define(new PSTACK_Ins());
+      define(new STMT_Ins());
+      define(new HALT_Ins());
+      define(new PUSHINT_Ins());
+      define(new PUSHNUM_Ins());
+      define(new PUSHSTR_Ins());
+      define(new PUSHFN_Ins());
+      define(new FLUSH_Ins());
+      define(new DUP_Ins());
+      define(new ROLL_Ins());
+      define(new ADD_Ins());
+      define(new SUB_Ins());
+      define(new MUL_Ins());
+      define(new DIV_Ins());
+      define(new IDIV_Ins());
+      define(new REM_Ins());
+      define(new NEG_Ins());
+      define(new EQ_Ins());
+      define(new NE_Ins());
+      define(new LT_Ins());
+      define(new LE_Ins());
+      define(new GT_Ins());
+      define(new GE_Ins());
+      define(new JUMP_Ins());
+      define(new JUMPT_Ins());
+      define(new JUMPF_Ins());
+      define(new DISPATCH_Ins());
+      define(new TRY_Ins());
+      define(new ENDTRY_Ins());
+      define(new THROW_Ins());
+      define(new NOT_Ins());
+      define(new AND_Ins());
+      define(new OR_Ins());
+      define(new XOR_Ins());
+      define(new LSH_Ins());
+      define(new ASH_Ins());
+      define(new CALL_Ins());
+      define(new CALLM_Ins());
+      define(new CALLFN_Ins());
+      define(new RETURN_Ins());
+      define(new LOCALS_Ins());
+      define(new PUSHLOC_Ins());
+      define(new POPLOC_Ins());
+      define(new ARG_Ins());
+      define(new VAR_Ins());
+      define(new PARAMS_Ins());
+      define(new NARGS_Ins());
+      define(new VARGS_Ins());
+      define(new PUSHVAR_Ins());
+      define(new POPVAR_Ins());
+   }
+
+   private static void define(SVMInstruction ins) {
+      instructionTable.put(ins.getName(), ins);
+      codeTable.put(ins.getCode(), ins);
+   }
+
+/* Global static variables */
+
+   private static TreeMap<String,SVMInstruction> instructionTable = null;
+   private static TreeMap<Integer,SVMInstruction> codeTable = null;
+
+/* Private instance variables */
+
+   private String name;
+   private int code;
+
+}
+
+abstract class SVMStringInstruction extends SVMInstruction {
+
+   public SVMStringInstruction(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String str = scanner.getStringValue(scanner.nextToken());
+      cv.addWord((getCode() << 24) | cv.stringRef(str));
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return getName() + " \"" + svm.getString(addr) + "\"";
+   }
+
+}
+
+abstract class SVMVarInstruction extends SVMInstruction {
+
+   public SVMVarInstruction(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String str = scanner.nextToken();
+      cv.addWord((getCode() << 24) | cv.stringRef(str));
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return getName() + " " + svm.getString(addr);
+   }
+
+}
+
+abstract class SVMAddressInstruction extends SVMInstruction {
+
+   public SVMAddressInstruction(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      int type = scanner.getTokenType(token);
+      switch (type) {
+       case TokenScanner.NUMBER:
+         cv.addWord((getCode() << 24) | Integer.parseInt(token));
+         break;
+       case TokenScanner.WORD:
+         cv.addWord((getCode() << 24) | cv.labelRef(token));
+         break;
+       default:
+         throw new SyntaxError("Illegal argument " + token);
+      }
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return getName() + " " + addr;
+   }
+
+}
+
+abstract class SVMOffsetInstruction extends SVMInstruction {
+
+   public SVMOffsetInstruction(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      int type = scanner.getTokenType(token);
+      switch (type) {
+       case TokenScanner.NUMBER:
+         cv.addWord((getCode() << 24) | Integer.parseInt(token));
+         break;
+       case TokenScanner.WORD:
+         cv.addWord((getCode() << 24) | cv.getLabel(token));
+         break;
+       default:
+         throw new SyntaxError("Illegal argument " + token);
+      }
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return getName() + " " + addr;
+   }
+
+}
+
+abstract class SVMNameInstruction extends SVMInstruction {
+
+   public SVMNameInstruction(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String name = "";
+      while (true) {
+         String token = scanner.nextToken();
+         if (token.equals("\n")) break;
+         name += token;
+      }
+      scanner.saveToken("\n");
+      cv.addWord((getCode() << 24) | cv.stringRef(name));
+   }
+
+}
+
+abstract class ArithmeticOp extends SVMInstruction {
+   public ArithmeticOp(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      if (!lhs.isNumeric() || !rhs.isNumeric()) {
+         throw new RuntimeException("Illegal to apply " + getName() +
+                                    " to " + lhs + " and " + rhs);
+      }
+      if (lhs.getType() == Value.INTEGER && rhs.getType() == Value.INTEGER) {
+         int x = lhs.getIntegerValue();
+         int y = rhs.getIntegerValue();
+         svm.pushInteger(applyInteger(x, y));
+      } else {
+         double x = lhs.getDoubleValue();
+         double y = rhs.getDoubleValue();
+         svm.pushDouble(applyDouble(x, y));
+      }
+   }
+
+   public abstract int applyInteger(int x, int y);
+   public abstract double applyDouble(double x, double y);
+
+}
+
+abstract class RelationalOp extends SVMInstruction {
+   public RelationalOp(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      int lhsType = lhs.getType();
+      int rhsType = rhs.getType();
+      if (lhsType == Value.STRING && rhsType == Value.STRING) {
+         String s1 = lhs.getStringValue();
+         String s2 = rhs.getStringValue();
+         svm.pushBoolean(applyInteger(s1.compareTo(s2), 0));
+      } else if (lhsType == Value.INTEGER && rhsType == Value.INTEGER) {
+         int x = lhs.getIntegerValue();
+         int y = rhs.getIntegerValue();
+         svm.pushBoolean(applyInteger(x, y));
+      } else if (lhs.isNumeric() && rhs.isNumeric()) {
+         double x = lhs.getDoubleValue();
+         double y = rhs.getDoubleValue();
+         svm.pushBoolean(applyDouble(x, y));
+      } else {
+         Object v1 = lhs.getValue();
+         Object v2 = rhs.getValue();
+         svm.pushBoolean(applyObject(v1, v2));
+      }
+   }
+
+   public boolean applyObject(Object v1, Object v2) {
+      throw new RuntimeException("Illegal object comparison");
+   }
+
+   public abstract boolean applyInteger(int x, int y);
+   public abstract boolean applyDouble(double x, double y);
+
+}
+
+abstract class LogicalOp extends SVMInstruction {
+   public LogicalOp(String name, int code) {
+      super(name, code);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      int lhsType = lhs.getType();
+      int rhsType = rhs.getType();
+      if (lhsType == Value.BOOLEAN && rhsType == Value.BOOLEAN) {
+         int v1 = lhs.getBooleanValue() ? -1 : 0;
+         int v2 = rhs.getBooleanValue() ? -1 : 0;
+         svm.pushBoolean(applyInteger(v1, v2) != 0);
+      } else {
+         int x = lhs.getIntegerValue();
+         int y = rhs.getIntegerValue();
+         svm.pushInteger(applyInteger(x, y));
+      }
+   }
+
+   public abstract int applyInteger(int x, int y);
+
+}
+
+class END_Ins extends SVMInstruction {
+
+   public END_Ins() {
+      super("END", SVMC.END);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.setPC(-1);
+   }
+
+}
+
+class VERSION_Ins extends SVMOffsetInstruction {
+
+   public VERSION_Ins() {
+      super("VERSION", SVMC.VERSION);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      if (addr != SVMC.SVM_VERSION) {
+         throw new RuntimeException("Incompatible SVM version");
+      }
+   }
+
+}
+
+class PSTACK_Ins extends SVMInstruction {
+
+   public PSTACK_Ins() {
+      super("PSTACK", SVMC.PSTACK);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pstack();
+   }
+
+}
+
+class STMT_Ins extends SVMOffsetInstruction {
+
+   public STMT_Ins() {
+      super("STMT", SVMC.STMT);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.setStatementOffset(addr);
+      svm.restoreStackBase();
+   }
+
+}
+
+class HALT_Ins extends SVMInstruction {
+
+   public HALT_Ins() {
+      super("HALT", SVMC.HALT);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.setPC(-1);
+   }
+
+}
+
+class PUSHINT_Ins extends SVMAddressInstruction {
+
+   public PUSHINT_Ins() {
+      super("PUSHINT", SVMC.PUSHINT);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pushInteger(addr);
+   }
+
+}
+
+class PUSHNUM_Ins extends SVMInstruction {
+
+   public PUSHNUM_Ins() {
+      super("PUSHNUM", SVMC.PUSHNUM);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      if (token.equals("-")) token += scanner.nextToken();
+      cv.addWord((getCode() << 24) | cv.stringRef(token));
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      String str = svm.getString(addr);
+      if (str.indexOf(".") == -1 && str.toUpperCase().indexOf("E") == -1) {
+         svm.pushInteger(Integer.parseInt(str));
+      } else {
+         svm.pushDouble(Double.parseDouble(str));
+      }
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return "PUSHNUM " + svm.getString(addr);
+   }
+
+}
+
+class PUSHSTR_Ins extends SVMStringInstruction {
+
+   public PUSHSTR_Ins() {
+      super("PUSHSTR", SVMC.PUSHSTR);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pushString(svm.getString(addr));
+   }
+
+}
+
+class PUSHFN_Ins extends SVMAddressInstruction {
+
+   public PUSHFN_Ins() {
+      super("PUSHFN", SVMC.PUSHFN);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      int[] code = svm.getCode();
+      SVMFunctionClosure closure = new SVMFunctionClosure(code, addr, cf);
+      svm.push(Value.createObject(closure, "FunctionClosure"));
+   }
+
+}
+
+class FLUSH_Ins extends SVMInstruction {
+
+   public FLUSH_Ins() {
+      super("FLUSH", SVMC.FLUSH);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      if (scanner.getTokenType(token) == TokenScanner.NUMBER) {
+         cv.addWord(SVMC.FLUSH << 24 | Integer.parseInt(token));
+      } else {
+         scanner.saveToken(token);
+         cv.addWord(SVMC.FLUSH << 24 | 1);
+      }
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      for (int i = 0; i < Math.min(1, addr); i++) {
+         svm.pop();
+      }
+   }
+
+}
+
+class DUP_Ins extends SVMInstruction {
+
+   public DUP_Ins() {
+      super("DUP", SVMC.DUP);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.push(svm.peekBack(0));
+   }
+
+}
+
+class ROLL_Ins extends SVMOffsetInstruction {
+
+   public ROLL_Ins() {
+      super("ROLL", SVMC.ROLL);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.roll(addr);
+   }
+
+}
+
+class ADD_Ins extends SVMInstruction {
+
+   public ADD_Ins() {
+      super("ADD", SVMC.ADD);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      int lhsType = lhs.getType();
+      int rhsType = rhs.getType();
+      if (lhsType == Value.STRING || rhsType == Value.STRING) {
+         svm.pushString(svm.stringify(lhs) + svm.stringify(rhs));
+      } else if (lhsType == Value.INTEGER && rhsType == Value.INTEGER) {
+         int x = lhs.getIntegerValue();
+         int y = rhs.getIntegerValue();
+         svm.pushInteger(x + y);
+      } else {
+         double x = lhs.getDoubleValue();
+         double y = rhs.getDoubleValue();
+         svm.pushDouble(x + y);
+      }
+   }
+
+}
+
+class SUB_Ins extends ArithmeticOp {
+
+   public SUB_Ins() {
+      super("SUB", SVMC.SUB);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return x - y;
+   }
+
+   @Override
+   public double applyDouble(double x, double y) {
+      return x - y;
+   }
+
+}
+
+class MUL_Ins extends ArithmeticOp {
+
+   public MUL_Ins() {
+      super("MUL", SVMC.MUL);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return x * y;
+   }
+
+   @Override
+   public double applyDouble(double x, double y) {
+      return x * y;
+   }
+
+}
+
+class DIV_Ins extends SVMInstruction {
+
+   public DIV_Ins() {
+      super("DIV", SVMC.DIV);
+   }
+
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      if (lhs.getType() == Value.INTEGER && rhs.getType() == Value.INTEGER) {
+         int num = lhs.getIntegerValue();
+         int den = rhs.getIntegerValue();
+         if (den != 0 && (int) (num / den) * den == num) {
+            svm.pushInteger((int) (num / den));
+         } else {
+            svm.pushDouble((double) num / den);
+         }
+      } else {
+         svm.pushDouble(lhs.getDoubleValue() / rhs.getDoubleValue());
+      }
+   }
+
+}
+
+class IDIV_Ins extends SVMInstruction {
+
+   public IDIV_Ins() {
+      super("IDIV", SVMC.IDIV);
+   }
+
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      int result = (int) (lhs.getDoubleValue() / rhs.getDoubleValue());
+      svm.pushInteger(result);
+   }
+
+}
+
+class REM_Ins extends SVMInstruction {
+
+   public REM_Ins() {
+      super("REM", SVMC.REM);
+   }
+
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      Value lhs = svm.pop();
+      if (lhs.getType() == Value.INTEGER && rhs.getType() == Value.INTEGER) {
+         int num = lhs.getIntegerValue();
+         int den = rhs.getIntegerValue();
+         if (den == 0) {
+            svm.pushDouble(num % 0.0);
+         } else {
+            svm.pushInteger(num % den);
+         }
+      } else {
+         svm.pushDouble(lhs.getDoubleValue() % rhs.getDoubleValue());
+      }
+   }
+
+}
+
+class NEG_Ins extends SVMInstruction {
+
+   public NEG_Ins() {
+      super("NEG", SVMC.NEG);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value rhs = svm.pop();
+      if (rhs.getType() == Value.INTEGER) {
+         int x = rhs.getIntegerValue();
+         svm.pushInteger(-x);
+      } else {
+         double x = rhs.getDoubleValue();
+         svm.pushDouble(-x);
+      }
+   }
+
+}
+
+class EQ_Ins extends RelationalOp {
+
+   public EQ_Ins() {
+      super("EQ", SVMC.EQ);
+   }
+
+   @Override
+   public boolean applyObject(Object x, Object y) {
+      return x == y;
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x == y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x == y;
+   }
+
+}
+
+class NE_Ins extends RelationalOp {
+
+   public NE_Ins() {
+      super("NE", SVMC.NE);
+   }
+
+   @Override
+   public boolean applyObject(Object x, Object y) {
+      return x != y;
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x != y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x != y;
+   }
+
+}
+
+class LT_Ins extends RelationalOp {
+
+   public LT_Ins() {
+      super("LT", SVMC.LT);
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x < y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x < y;
+   }
+
+}
+
+class LE_Ins extends RelationalOp {
+
+   public LE_Ins() {
+      super("LE", SVMC.LE);
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x <= y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x <= y;
+   }
+
+}
+
+class GT_Ins extends RelationalOp {
+
+   public GT_Ins() {
+      super("GT", SVMC.GT);
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x > y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x > y;
+   }
+
+}
+
+class GE_Ins extends RelationalOp {
+
+   public GE_Ins() {
+      super("GE", SVMC.GE);
+   }
+
+   @Override
+   public boolean applyInteger(int x, int y) {
+      return x >= y;
+   }
+
+   @Override
+   public boolean applyDouble(double x, double y) {
+      return x >= y;
+   }
+
+}
+
+class JUMP_Ins extends SVMAddressInstruction {
+
+   public JUMP_Ins() {
+      super("JUMP", SVMC.JUMP);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.setPC(addr);
+   }
+
+}
+
+class JUMPT_Ins extends SVMAddressInstruction {
+
+   public JUMPT_Ins() {
+      super("JUMPT", SVMC.JUMPT);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      if (svm.popBoolean()) svm.setPC(addr);
+   }
+
+}
+
+class JUMPF_Ins extends SVMAddressInstruction {
+
+   public JUMPF_Ins() {
+      super("JUMPF", SVMC.JUMPF);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      if (!svm.popBoolean()) svm.setPC(addr);
+   }
+
+}
+
+class DISPATCH_Ins extends SVMInstruction {
+
+   public DISPATCH_Ins() {
+      super("DISPATCH", SVMC.DISPATCH);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pushFrame();
+      svm.getCurrentFrame().setReturnAddress(svm.getPC());
+      svm.setPC(svm.popInteger());
+   }
+
+}
+
+class TRY_Ins extends SVMAddressInstruction {
+
+   public TRY_Ins() {
+      super("TRY", SVMC.TRY);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pushExceptionFrame(addr);
+   }
+
+}
+
+class ENDTRY_Ins extends SVMInstruction {
+
+   public ENDTRY_Ins() {
+      super("ENDTRY", SVMC.ENDTRY);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.popExceptionFrame();
+   }
+
+}
+
+class THROW_Ins extends SVMInstruction {
+
+   public THROW_Ins() {
+      super("THROW", SVMC.THROW);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value v = svm.pop();
+      svm.throwException(new RuntimeException(v.toString()), v);
+   }
+
+}
+
+class NOT_Ins extends SVMInstruction {
+
+   public NOT_Ins() {
+      super("NOT", SVMC.NOT);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      Value v = svm.pop();
+      int type = v.getType();
+      if (type == Value.BOOLEAN) {
+         svm.pushBoolean(!v.getBooleanValue());
+      } else {
+         svm.pushInteger(~v.getIntegerValue());
+      }
+   }
+
+}
+
+class AND_Ins extends LogicalOp {
+
+   public AND_Ins() {
+      super("AND", SVMC.AND);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return x & y;
+   }
+
+}
+
+class OR_Ins extends LogicalOp {
+
+   public OR_Ins() {
+      super("OR", SVMC.OR);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return x | y;
+   }
+
+}
+
+class XOR_Ins extends LogicalOp {
+
+   public XOR_Ins() {
+      super("XOR", SVMC.XOR);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return x ^ y;
+   }
+
+}
+
+class LSH_Ins extends LogicalOp {
+
+   public LSH_Ins() {
+      super("LSH", SVMC.LSH);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return (y < 0) ? (x >>> -y) : (x << y);
+   }
+
+}
+
+class ASH_Ins extends LogicalOp {
+
+   public ASH_Ins() {
+      super("ASH", SVMC.ASH);
+   }
+
+   @Override
+   public int applyInteger(int x, int y) {
+      return (y < 0) ? (x >> -y) : (x << y);
+   }
+
+}
+
+class CALL_Ins extends SVMInstruction {
+
+   public CALL_Ins() {
+      super("CALL", SVMC.CALL);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      int type = scanner.getTokenType(token);
+      if (type == TokenScanner.NUMBER) {
+         cv.addWord((getCode() << 24) | Integer.parseInt(token));
+      } else if (type == TokenScanner.WORD) {
+         String next = scanner.nextToken();
+         if (next.equals(".")) {
+            token += "." + scanner.nextToken();
+            cv.addWord((SVMC.CALLM << 24) | cv.stringRef(token));
+         } else {
+            scanner.saveToken(next);
+            cv.addWord((SVMC.CALL << 24) | cv.labelRef(token));
+         }
+      } else {
+         throw new SyntaxError("Illegal argument " + token);
+      }
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.pushFrame();
+      SVMStackFrame cf = svm.getCurrentFrame();
+      cf.setReturnAddress(svm.getPC());
+      cf.setArgumentCount(svm.getNARGSCount());
+      svm.setPC(addr);
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return "CALL " + addr;
+   }
+
+}
+
+class CALLM_Ins extends SVMNameInstruction {
+
+   public CALLM_Ins() {
+      super("CALLM", SVMC.CALLM);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      String token = scanner.nextToken();
+      if (scanner.getTokenType(token) != TokenScanner.WORD) {
+         throw new SyntaxError("CALLM requires a class and method name");
+      }
+      scanner.verifyToken(".");
+      token += "." + scanner.nextToken();
+      cv.addWord((SVMC.CALLM << 24) | cv.stringRef(token));
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      cf.setArgumentCount(svm.getNARGSCount());
+      String name = svm.getString(addr);
+      int dot = name.lastIndexOf(".");
+      String cname = (dot == -1) ? receiverClass(svm) : name.substring(0, dot);
+      String mname = name.substring(dot + 1);
+      SVMClass c = SVMClass.forName(cname);
+      SVMMethod m = c.getMethod(mname);
+      m.execute(svm, null);
+   }
+
+   @Override
+   public String unparse(SVM svm, int addr) {
+      return "CALLM " + svm.getString(addr);
+   }
+
+   private String receiverClass(SVM svm) {
+      int nArgs = svm.getArgumentCount();
+      return svm.peekBack(nArgs).getClassName();
+   }
+
+}
+
+class CALLFN_Ins extends SVMInstruction {
+
+   public CALLFN_Ins() {
+      super("CALLFN", SVMC.CALLFN);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.call(svm.getNARGSCount());
+   }
+
+}
+
+class RETURN_Ins extends SVMInstruction {
+
+   public RETURN_Ins() {
+      super("RETURN", SVMC.RETURN);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.setPC(svm.getCurrentFrame().getReturnAddress());
+      svm.popFrame();
+      if (svm.getCurrentFrame() == null) svm.setPC(-1);
+   }
+
+}
+
+class PUSHLOC_Ins extends SVMOffsetInstruction {
+
+   public PUSHLOC_Ins() {
+      super("PUSHLOC", SVMC.PUSHLOC);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.push(svm.getCurrentFrame().getLocal(addr));
+   }
+
+}
+
+class POPLOC_Ins extends SVMOffsetInstruction {
+
+   public POPLOC_Ins() {
+      super("POPLOC", SVMC.POPLOC);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.getCurrentFrame().setLocal(addr, svm.pop());
+   }
+
+}
+
+class LOCALS_Ins extends SVMOffsetInstruction {
+
+   public LOCALS_Ins() {
+      super("LOCALS", SVMC.LOCALS);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      svm.getCurrentFrame().setFrameSize(addr);
+   }
+
+   @Override
+   public void assemble(CodeVector cv, TokenScanner scanner) {
+      int nLocals = 0;
+      while (true) {
+         String token = scanner.nextToken();
+         if (token.equals("\n")) break;
+         cv.defineSymbol(token, nLocals++);
+      }
+      scanner.saveToken("\n");
+      cv.addWord((getCode() << 24) | nLocals);
+   }
+
+}
+
+class ARG_Ins extends SVMVarInstruction {
+
+   public ARG_Ins() {
+      super("ARG", SVMC.ARG);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      String name = svm.getString(addr);
+      Value v = svm.pop();
+      cf.declareVar(name);
+      cf.setVar(name, v);
+   }
+
+}
+
+class VAR_Ins extends SVMVarInstruction {
+
+   public VAR_Ins() {
+      super("VAR", SVMC.VAR);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      String name = svm.getString(addr);
+      cf.declareVar(name);
+   }
+
+}
+
+class PARAMS_Ins extends SVMOffsetInstruction {
+
+   public PARAMS_Ins() {
+      super("PARAMS", SVMC.PARAMS);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      int nParams = addr;
+      int nArgs = svm.getArgumentCount();
+      if (nArgs != -1) {
+         svm.checkArgumentCount(nArgs, nParams);
+         svm.setStackBase(nArgs);
+      }
+   }
+}
+
+class NARGS_Ins extends SVMOffsetInstruction {
+
+   public NARGS_Ins() {
+      super("NARGS", SVMC.NARGS);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      /* Empty */
+   }
+}
+
+class VARGS_Ins extends SVMInstruction {
+
+   public VARGS_Ins() {
+      super("VARGS", SVMC.VARGS);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMArray args = new SVMArray();
+      int nArgs = svm.getArgumentCount();
+      if (nArgs != -1) {
+         for (int i = 0; i < nArgs; i++) {
+            args.add(0, svm.pop());
+         }
+      }
+      svm.push(Value.createObject(args, "Array"));
+   }
+}
+
+class PUSHVAR_Ins extends SVMVarInstruction {
+
+   public PUSHVAR_Ins() {
+      super("PUSHVAR", SVMC.PUSHVAR);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      String name = svm.getString(addr);
+      while (cf != null) {
+         if (cf.isDeclared(name)) {
+            svm.push(cf.getVar(name));
+            return;
+         }
+         cf = cf.getFrameLink();
+      }
+      if (svm.isGlobal(name)) {
+         svm.push(svm.getGlobal(name));
+      } else {
+         throw new RuntimeException(name + " has not been declared");
+      }
+   }
+
+}
+
+class POPVAR_Ins extends SVMVarInstruction {
+
+   public POPVAR_Ins() {
+      super("POPVAR", SVMC.POPVAR);
+   }
+
+   @Override
+   public void execute(SVM svm, int addr) {
+      SVMStackFrame cf = svm.getCurrentFrame();
+      String name = svm.getString(addr);
+      while (cf != null) {
+         if (cf.isDeclared(name)) {
+            cf.setVar(name, svm.pop());
+            return;
+         }
+         cf = cf.getFrameLink();
+      }
+      if (svm.isGlobal(name)) {
+         svm.setGlobal(name, svm.pop());
+      } else {
+         throw new RuntimeException(name + " has not been declared");
+      }
+   }
+
+}

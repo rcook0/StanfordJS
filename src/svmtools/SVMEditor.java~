@@ -1,0 +1,175 @@
+/*
+ * File: SVMEditor.java
+ * --------------------
+ * This class manages the specific behavior of editors that run in
+ * conjunction with the Stanford Virtual Machine.
+ */
+
+package edu.stanford.cs.svmtools;
+
+import edu.stanford.cs.java2js.JSFile;
+import edu.stanford.cs.java2js.JSFrame;
+import edu.stanford.cs.programeditor.CommentHighlightMode;
+import edu.stanford.cs.programeditor.ProgramEditor;
+import edu.stanford.cs.svm.SVMC;
+import edu.stanford.cs.tokenscanner.TokenScanner;
+import java.awt.Font;
+import java.util.TreeMap;
+import java.util.TreeSet;
+
+public class SVMEditor extends ProgramEditor {
+
+/**
+ * Creates a new <code>SVMEditor</code> object.
+ */
+
+   public SVMEditor() {
+      editorFile = null;
+      scanner = new TokenScanner();
+      scanner.ignoreWhitespace();
+      scanner.ignoreComments();
+      scanner.scanNumbers();
+      setLineWrap(false);
+      setEditorMode(new CommentHighlightMode());
+      offsetToLine = new TreeMap<Integer,Integer>();
+      breakpointLines = new TreeSet<Integer>();
+   }
+
+/**
+ * Gets the line number corresponding to the statement offset.
+ *
+ * @param offset The offset address of a statement
+ * @return The corresponding line number
+ */
+
+   public int getSourceLineIndex(int offset) {
+      Integer k = offsetToLine.get(offset);
+      return (k == null) ? -1 : k;
+   }
+
+/**
+ * Clears the offset table for this editor.
+ */
+
+   public void clearOffsetTable() {
+      offsetToLine.clear();
+      breakpointLines.clear();
+   }
+
+/**
+ * Adds the statement offsets from the code vector to the internal line
+ * table.
+ *
+ * @param code The code array
+ */
+
+   public void addBreakpointLines(int[] code) {
+      int n = code.length;
+      for (int i = 0; i < n; i++) {
+         int ins = code[i];
+         if (ins >> 24 == SVMC.STMT) {
+            int offset = ins & 0xFFFFFF;
+            int line = getLineNumber(offset);
+            offsetToLine.put(offset, line);
+            breakpointLines.add(line);
+         }
+      }
+   }
+
+/**
+ * Sets the file object associated with this editor.
+ *
+ * @param file The file object associated with this editor
+ */
+
+   public void setFile(JSFile file) {
+      editorFile = file;
+      JSFrame frame = getFrame();
+      if (frame != null) {
+         frame.setTitle((file == null) ? "Untitled" : file.getName());
+      }
+   }
+
+/**
+ * Returns the file object associated with this editor.
+ *
+ * @return The file object associated with this editor
+ */
+
+   public JSFile getFile() {
+      return editorFile;
+   }
+
+/**
+ * Adds the characters in <code>chars</code> to the list of characters that
+ * are legal in a word.
+ *
+ * @param chars A string showing the additional characters legal in a word
+ */
+
+   public void addWordCharacters(String chars) {
+      scanner.addWordCharacters(chars);
+   }
+
+/**
+ * Returns a smaller font than the specified one, choosing only font sizes
+ * in the standard set.
+ *
+ * @param font The current font
+ * @return A font with the same style but a smaller pointsize
+ */
+
+   public static Font smallerFont(Font font) {
+      int nSizes = FONT_SIZES.length;
+      int oldSize = font.getSize();
+      int newSize = FONT_SIZES[0];
+      for (int i = nSizes - 1; i >= 0; i--) {
+         if (FONT_SIZES[i] < oldSize) {
+            newSize = FONT_SIZES[i];
+            break;
+         }
+      }
+      return font.deriveFont(font.getStyle(), newSize);
+   }
+
+/**
+ * Returns a larger font than the specified one, choosing only font sizes
+ * in the standard set.
+ *
+ * @param font The current font
+ * @return A font with the same style but a larger pointsize
+ */
+
+   public static Font largerFont(Font font) {
+      int nSizes = FONT_SIZES.length;
+      int oldSize = font.getSize();
+      int newSize = FONT_SIZES[nSizes - 1];
+      for (int i = 0; i < nSizes; i++) {
+         if (FONT_SIZES[i] > oldSize) {
+            newSize = FONT_SIZES[i];
+            break;
+         }
+      }
+      return font.deriveFont(font.getStyle(), newSize);
+   }
+
+/* Overrides */
+
+   @Override
+   public boolean isBreakpointLegal(int k) {
+      return breakpointLines.contains(k);
+   }
+
+/* Constants */
+
+   public static final int[] FONT_SIZES =
+      { 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48 };
+
+/* Private instance variables */
+
+   private JSFile editorFile;
+   private TreeMap<Integer,Integer> offsetToLine;
+   private TreeSet<Integer> breakpointLines;
+   private TokenScanner scanner;
+
+}
