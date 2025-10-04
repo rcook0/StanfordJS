@@ -1,0 +1,214 @@
+/*
+ * File: FindAndReplaceDialog.java
+ * -------------------------------
+ * This file defines the find-and-replace dialog for the ProgramEditor class.
+ */
+
+package edu.stanford.cs.jseditor;
+
+import edu.stanford.cs.java2js.JSDialog;
+import java.awt.BorderLayout;
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
+import java.awt.Toolkit;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+
+/**
+ * This class defines the dialog used to implement the find-and-replace
+ * dialog for a <code>JSEditor</code> object.
+ */
+
+public class FindAndReplaceDialog extends JSDialog {
+
+   public FindAndReplaceDialog(JSEditor editor) {
+      super(editor, false);
+editor.printDebugData();
+      findField = new JTextField();
+      replaceField = new JTextField();
+      listener = new FindAndReplaceListener(editor, this);
+      addMouseListener(listener);
+      addMouseMotionListener(listener);
+      initLayout();
+      pack();
+      this.editor = editor;
+   }
+
+/**
+ * Returns the contents of the find text field.
+ *
+ * @return The contents of the find text field
+ */
+
+   public String getFindField() {
+      return findField.getText();
+   }
+
+/**
+ * Returns the contents of the replace text field.
+ *
+ * @return The contents of the replace text field
+ */
+
+   public String getReplaceField() {
+      return replaceField.getText();
+   }
+
+/*
+ * Initializes the display characteristics of this dialog.  Subclasses
+ * can override this method to implement a different user model.
+ */
+
+   protected void initLayout() {
+      getRootPane().setBorder(BorderFactory.createEmptyBorder(TOP_MARGIN,
+                                                              LEFT_MARGIN,
+                                                              BOTTOM_MARGIN,
+                                                              RIGHT_MARGIN));
+      setLayout(new BorderLayout());
+      JPanel top = new JPanel();
+      top.setLayout(new BorderLayout());
+      JPanel labels = new JPanel();
+      labels.setLayout(new GridLayout(2, 1));
+      JPanel fields = new JPanel();
+      fields.setLayout(new BorderLayout());
+      buttons = new JPanel();
+      buttons.setLayout(new FlowLayout());
+      addButton("Find Next");
+      addButton("Replace");
+      addButton("Replace All");
+      addButton("Cancel");
+      findField.setActionCommand("Find Next");
+      findField.addActionListener(listener);
+      replaceField.setActionCommand("Find Next");
+      replaceField.addActionListener(listener);
+      JLabel label = new JLabel(" Find what: ");
+      label.setHorizontalAlignment(JLabel.RIGHT);
+      label.setVerticalAlignment(JLabel.CENTER);
+      labels.add(label);
+      label = new JLabel(" Replace with: ");
+      label.setHorizontalAlignment(JLabel.RIGHT);
+      label.setVerticalAlignment(JLabel.CENTER);
+      labels.add(label);
+      fields.add(findField, BorderLayout.NORTH);
+      fields.add(replaceField, BorderLayout.SOUTH);
+      top.add(labels, BorderLayout.WEST);
+      top.add(fields, BorderLayout.CENTER);
+      add(top, BorderLayout.CENTER);
+      add(buttons, BorderLayout.SOUTH);
+   }
+
+   protected JButton addButton(String label) {
+      JButton button = new JButton(label);
+      button.addActionListener(listener);
+      buttons.add(button);
+      return button;
+   }
+
+/* Constants */
+
+   private static final int TOP_MARGIN = 4;
+   private static final int BOTTOM_MARGIN = 1;
+   private static final int LEFT_MARGIN = 4;
+   private static final int RIGHT_MARGIN = 4;
+
+/* Private instance variables */
+
+   private FindAndReplaceListener listener;
+   private JPanel buttons;
+   private JTextField findField;
+   private JTextField replaceField;
+   private JSEditor editor;
+
+}
+
+class FindAndReplaceListener implements ActionListener,
+                                        MouseListener, MouseMotionListener {
+
+   public FindAndReplaceListener(JSEditor editor,
+                                 FindAndReplaceDialog dialog) {
+      this.editor = editor;
+      this.dialog = dialog;
+   }
+
+/* ActionListener */
+
+   @Override
+   public void actionPerformed(ActionEvent e) {
+      String cmd = e.getActionCommand();
+      String find = dialog.getFindField();
+      String replace = dialog.getReplaceField();
+      if (cmd.equals("Find Next")) {
+         if (!editor.findNext(find)) {
+            Toolkit.getDefaultToolkit().beep();
+         }
+      } else if (cmd.equals("Replace")) {
+         if (!editor.replace(find, replace)) {
+            Toolkit.getDefaultToolkit().beep();
+         }
+      } else if (cmd.equals("Replace All")) {
+         editor.replaceAll(find, replace);
+      } else if (cmd.equals("Cancel")) {
+         dialog.setVisible(false);
+      }
+   }
+
+/* MouseListener */
+
+   @Override
+   public void mouseClicked(MouseEvent e) {
+      dialog.execute("Cancel");
+      dialog.getTarget().requestFocus();
+      e.consume();
+   }
+
+   @Override
+   public void mouseEntered(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mouseExited(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mousePressed(MouseEvent e) {
+      deltaX = dialog.getX() - e.getX();
+      deltaY = dialog.getY() - e.getY();
+      e.consume();
+   }
+
+   @Override
+   public void mouseReleased(MouseEvent e) {
+      e.consume();
+   }
+
+/* MouseMotionListener */
+
+   @Override
+   public void mouseMoved(MouseEvent e) {
+      e.consume();
+   }
+
+   @Override
+   public void mouseDragged(MouseEvent e) {
+      dialog.setLocation(e.getX() + deltaX, e.getY() + deltaY);
+      e.consume();
+   }
+
+/* Private instance variables */
+
+   private FindAndReplaceDialog dialog;
+   private JSEditor editor;
+   private int deltaX;
+   private int deltaY;
+
+}

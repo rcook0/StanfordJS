@@ -1,0 +1,456 @@
+/*
+ * File: ProgramEditor.java
+ * ------------------------
+ * This file defines a ProgramEditor class.
+ */
+
+package edu.stanford.cs.programeditor;
+
+import edu.stanford.cs.java2js.JSCanvas;
+import edu.stanford.cs.java2js.JSErrorDialog;
+import edu.stanford.cs.java2js.JSImage;
+import edu.stanford.cs.jseditor.EditorMode;
+import edu.stanford.cs.jseditor.HighlighterKey;
+import edu.stanford.cs.jseditor.JSEditor;
+import edu.stanford.cs.jseditor.Marker;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.event.AdjustmentEvent;
+import java.awt.event.AdjustmentListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.util.TreeSet;
+import javax.swing.BorderFactory;
+import javax.swing.SwingUtilities;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+
+public class ProgramEditor extends JSEditor {
+
+/**
+ * Creates a new program editor.
+ */
+
+   public ProgramEditor() {
+      annotationPane = new PEAnnotationPane(this);
+      add(annotationPane, BorderLayout.WEST);
+      addChangeListener(annotationPane);
+      addAdjustmentListener(annotationPane);
+      breakpoints = new TreeSet<Marker>();
+      errorDialog = null;
+      lastErrorKey = null;
+      needsParsing = false;
+      currentLine = 0;
+      breakpointImage = new JSImage(BREAKPOINT_IMAGE);
+      handImage = new JSImage(HAND_IMAGE);
+   }
+
+/**
+ * Set the current program line.  If <code>k</code> is less than or equal
+ * to 0, no mark appears.
+ *
+ * @param k The line number (1-based)
+ */
+
+   public void setCurrentLine(int k) {
+      currentLine = k;
+      ensureLineVisible(k);
+      repaint();
+   }
+
+/**
+ * Gets the current program line.
+ *
+ * @return The current line number (1-based)
+ */
+
+   public int getCurrentLine() {
+      return currentLine;
+   }
+
+/**
+ * Pops up an error dialog and highlights the line containing the error.
+ * The message can either be normal text or HTML text enclosed in
+ * <code>&lt;html&gt;</code> brackets.
+ *
+ * @param msg The error message
+ * @param k The line number (1-based)
+ */
+
+   public void showErrorDialog(String msg, int k) {
+      if (errorDialog == null) {
+         errorDialog = createErrorDialog();
+      }
+      if (lastErrorKey != null) {
+         removeBackgroundHighlight(lastErrorKey);
+         lastErrorKey = null;
+      }
+      if (k != 0) {
+         lastErrorKey = addBackgroundHighlight(k, errorDialog.getBackground());
+         ensureLineVisible(k);
+      }
+      repaint();
+      errorDialog.setErrorMessage(msg);
+      Dimension psize = errorDialog.getPreferredSize();
+      errorDialog.setSize(psize.width, psize.height);
+      Point pt = new Point((getWidth() - errorDialog.getWidth()) / 2,
+                           (getHeight() - errorDialog.getHeight()) / 2);
+      errorDialog.setLocation(errorDialog.getWindowCoordinates(pt));
+      errorDialog.setVisible(true);
+   }
+
+/**
+ * Clears the error line highlight.
+ */
+
+   public void clearErrorHighlight() {
+      if (lastErrorKey != null) {
+         removeBackgroundHighlight(lastErrorKey);
+      }
+   }
+
+/**
+ * Dismisses the error dialog.
+ */
+
+   public void dismissErrorDialog() {
+      if (errorDialog != null) errorDialog.setVisible(false);
+      requestFocus();
+   }
+
+/**
+ * Returns <code>true</code> if the error dialog is showing.
+ */
+
+   public boolean isErrorDialogShowing() {
+      return errorDialog != null && errorDialog.isVisible();
+   }
+
+/**
+ * Updates the syntax highlighting.
+ */
+
+   public void updateHighlights() {
+      EditorMode mode = getEditorMode();
+      if (mode != null) {
+         boolean needsSaving = isSaveNeeded();
+         setUndoableFlag(false);
+         mode.runTokenizer(this);
+         setSaveNeeded(needsSaving);
+         setUndoableFlag(true);
+      }
+   }
+
+/**
+ * Sets a breakpoint at line <code>k</code>.
+ *
+ * @param k The line number (1-based)
+ */
+
+   public void setBreakpoint(int k) {
+      breakpoints.add(createMarker(getLineStart(k)));
+      annotationPane.repaint();
+   }
+
+/**
+ * Removes a breakpoint at line <code>k</code>, if any.
+ *
+ * @param k The line number (1-based)
+ */
+
+   public void removeBreakpoint(int k) {
+      breakpoints.remove(createMarker(getLineStart(k)));
+      annotationPane.repaint();
+   }
+
+/**
+ * Removes all breakpoints.
+ */
+
+   public void removeAllBreakpoints() {
+      breakpoints.clear();
+      annotationPane.repaint();
+   }
+
+/**
+ * Returns <code>true</code> if there is a breakpoint at line <code>k</code>.
+ *
+ * @param k The line number (1-based)
+ * @return <code>true</code> if there is a breakpoint at line <code>k</code>
+ */
+
+   public boolean isBreakpoint(int k) {
+      return breakpoints.contains(createMarker(getLineStart(k)));
+   }
+
+/**
+ * Returns <code>true</code> if it is legal to put a breakpoint at line
+ * <code>k</code>.  This method always returns <code>true</code> in the
+ * base class.  Subclasses override this method to allow breakpoints only
+ * on particular lines.
+ *
+ * @param k The line number (1-based)
+ * @return <code>true</code> if a breakpoint is legal at line <code>k</code>
+ */
+
+   public boolean isBreakpointLegal(int k) {
+      return true;
+   }
+
+/**
+ * Creates the error dialog used for this editor.
+ */
+
+   protected ProgramErrorDialog createErrorDialog() {
+      return new ProgramErrorDialog(this);
+   }
+
+/**
+ * Draws the annotations for line k.  Clients can override this method
+ * to add additional annotations.
+ *
+ * @param g The graphics context
+ * @param k The line number
+ * @param r The rectangle in the annotation pane
+ */
+
+   protected void drawAnnotations(Graphics g, int k, Rectangle r) {
+      if (isBreakpoint(k)) drawBreakpoint(g, r);
+      if (getCurrentLine() == k) drawCurrentLineMarker(g, r);
+   }
+
+/**
+ * Sets the flag that indicates whether this file needs parsing.
+ *
+ * @param flag The flag that indicates whether this file needs parsing
+ */
+
+   public void setParseNeeded(boolean flag) {
+      needsParsing = flag;
+   }
+
+/**
+ * Returns <code>true</code> if this file needs saving.
+ *
+ * @return
+ */
+
+   public boolean isParseNeeded() {
+      return needsParsing;
+   }
+
+   public void tickle() {
+      SwingUtilities.invokeLater(new EditorTickler(this));
+   }
+
+/**
+ * Draws the current line marker inside the rectangle.
+ *
+ * @param g The graphics context
+ * @param r The rectangle in the annotation pane
+ */
+
+   protected void drawCurrentLineMarker(Graphics g, Rectangle r) {
+      int x = r.x + r.width / 2 + HAND_DX;
+      int y = r.y + r.height / 2 + HAND_DY;
+      g.drawImage(handImage, x, y, this);
+   }
+
+/**
+ * Draws a breakpoint mark inside the rectangle.
+ *
+ * @param g The graphics context
+ * @param r The rectangle in the annotation pane
+ */
+
+   protected void drawBreakpoint(Graphics g, Rectangle r) {
+      int x = r.x + r.width / 2 + BREAKPOINT_DX;
+      int y = r.y + r.height / 2 + BREAKPOINT_DY;
+      g.drawImage(breakpointImage, x, y, this);
+   }
+
+/**
+ * Returns the set of all the breakpoint markers.
+ *
+ * @return The set of all the breakpoint markers
+ */
+
+   protected TreeSet<Marker> getBreakpoints() {
+      return breakpoints;
+   }
+
+/* Breakpoint image */
+
+   private static final String BREAKPOINT_IMAGE =
+      "data:image/png;base64," +
+      "iVBORw0KGgoAAAANSUhEUgAAABEAAAARCAYAAAA7bUf6AAAAPklEQVR42mM4" +
+      "8/8/A6UYqyBQ+D8uTJQh+AzAZRDJBmAziCwD0A0i2wBkg0YNGfSGUCWdUC3F" +
+      "Ui3vUC0Xk4MBwEuSveqvlaYAAAAASUVORK5CYII=";
+
+/* Hand image for marking the current line */
+
+   private static final String HAND_IMAGE =
+      "data:image/png;base64," +
+      "iVBORw0KGgoAAAANSUhEUgAAABoAAAAPCAYAAAD6Ud/mAAABPElEQVR42uWU" +
+      "oZKDQAyGeSLeYZ+AF1iNrsXikLi6U6gqFApThSgGg6mowSAQGATi778X5ijt" +
+      "wnF3MzXHTAa6k+RL/mTrXADnHeb8T1DoGU/AVTRHvjeNfqsga4A7vQmqWnw9" +
+      "5w8518l8No7A0APNjb5nQJk4fwa+gph0YKDHb0XHtGCSz0xAoIF6kMRVIv5R" +
+      "BrQsomkEcq2BIpf4x86soH6UisoRiyfR4pNd5XfkrkjH8yBayrcJKjpWyaTd" +
+      "ILIk/vpcdi+DtSOCwqeqj4VAa76jw19ASjp4lK6fOjNnXgDEwVxURmDIGEdv" +
+      "w6xbV3K4vllnJjqmBE8z6jjogxKf3EhKvzTe15UV5E5y6WC+N/EJuJHYlksp" +
+      "fQ49Ur8EaWofPm2NsixAXtFO053ZK91Pzdwp07nyvl+Et/7X3QHwFTTGgRQj" +
+      "RQAAAABJRU5ErkJggg==";
+
+/* Constants */
+
+   public static final int BREAKPOINT_DX = -9;
+   public static final int BREAKPOINT_DY = -11;
+   public static final int ERROR_DX = 2;
+   public static final int ERROR_DY = 4;
+   public static final int HAND_DX = -13;
+   public static final int HAND_DY = -6;
+
+/* Private instance variables */
+
+   private HighlighterKey lastErrorKey;
+   private JSErrorDialog errorDialog;
+   private JSImage breakpointImage;
+   private JSImage handImage;
+   private PEAnnotationPane annotationPane;
+   private TreeSet<Marker> breakpoints;
+   private boolean needsParsing;
+   private int currentLine;
+
+}
+
+/* Package class to manage the annotations */
+
+class PEAnnotationPane extends JSCanvas
+                       implements AdjustmentListener, ChangeListener,
+                                  MouseListener {
+
+   public PEAnnotationPane(ProgramEditor editor) {
+      this.editor = editor;
+      setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Color.GRAY));
+      addMouseListener(this);
+   }
+
+   @Override
+   public void paintComponent(Graphics g) {
+      if (needsUpdate) {
+         if (editor != null) editor.updateHighlights();
+         needsUpdate = false;
+      }
+      Dimension size = getSize();
+      g.setColor(ANNOTATION_BGCOLOR);
+      g.fillRect(0, 0, size.width, size.height);
+      FontMetrics fm = editor.getTextPaneMetrics();
+      int h = editor.getLineHeight();
+      int k = editor.getTopLine();
+      int y0 = editor.offsetToPoint(editor.getLineStart(k)).y - fm.getAscent();
+      Rectangle r = new Rectangle(0, y0, size.width, h);
+      while (r.y < size.height && editor.getLine(k) != null) {
+         editor.drawAnnotations(g, k, r);
+         r.y += h;
+         k++;
+      }
+   }
+
+   @Override
+   public Dimension getPreferredSize() {
+      return new Dimension(ANNOTATION_WIDTH, 1);
+   }
+
+/* MouseListener */
+
+   @Override
+   public void mouseClicked(MouseEvent e) {
+      int offset = editor.pointToOffset(new Point(0, e.getY()));
+      if (offset >= 0) {
+         int k = editor.getLineNumber(offset);
+         if (editor.isBreakpoint(k)) {
+            editor.removeBreakpoint(k);
+         } else if (editor.isBreakpointLegal(k)) {
+            editor.setBreakpoint(k);
+         }
+      }
+   }
+
+   @Override
+   public void mouseEntered(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mouseExited(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mousePressed(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mouseReleased(MouseEvent e) {
+      /* Empty */
+   }
+
+/* ChangeListener */
+
+   @Override
+   public void stateChanged(ChangeEvent e) {
+      needsUpdate = true;
+      editor.setParseNeeded(true);
+      editor.clearErrorHighlight();
+      repaint();
+   }
+
+/* AdjustmentListener */
+
+   @Override
+   public void adjustmentValueChanged(AdjustmentEvent e) {
+      repaint();
+   }
+
+/* Constants */
+
+   public static final Color ANNOTATION_BGCOLOR = new Color(0xEEEEEE);
+   public static final int ANNOTATION_WIDTH = 26;
+
+/* Private instance variables */
+
+   private ProgramEditor editor;
+   private boolean needsUpdate;
+
+}
+
+class EditorTickler implements Runnable {
+
+   public EditorTickler(ProgramEditor editor) {
+      this.editor = editor;
+   }
+
+   public void run() {
+      try {
+         Thread.sleep(2000);
+      } catch (InterruptedException ex) {
+         /* Empty */
+      }
+      int n = editor.getComponentCount();
+      for (int i = 0; i < n; i++) {
+         editor.getComponent(i).repaint();
+      }
+      editor.repaint();
+   }
+
+/* Private instance variables */
+
+   private ProgramEditor editor;
+
+}

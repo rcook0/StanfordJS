@@ -1,0 +1,84 @@
+/*
+ * File: JSFrame.java
+ * ------------------
+ * This class implements a frame-like component that sits inside the
+ * simulated component hierarchy.
+ */
+
+package edu.stanford.cs.java2js;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import javax.swing.BorderFactory;
+import javax.swing.JComponent;
+
+public class JSFrame extends JSPanel {
+
+   public JSFrame(JComponent contents, String title) {
+      setLayout(new BorderLayout());
+      add(contents, BorderLayout.CENTER);
+      contents.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
+      tb = new JSTitleBar(title);
+      add(tb, BorderLayout.NORTH);
+      contents.addFocusListener(tb);
+      tb.addMouseListener(new JSTitleBarListener(contents));
+   }
+
+   public void setTitle(String title) {
+      tb.setTitle(title);
+   }
+
+   public String getTitle() {
+      return tb.getTitle();
+   }
+
+/* Constants */
+
+   public static final Color BORDER_COLOR = new Color(0x666666);
+
+/* Private instance variables */
+
+   private JSTitleBar tb;
+
+}
+
+class JSTitleBarListener implements MouseListener {
+
+   public JSTitleBarListener(JComponent target) {
+      this.target = target;
+   }
+
+/* MouseListener */
+
+   @Override
+   public void mouseClicked(MouseEvent e) {
+      target.requestFocus();
+   }
+
+   @Override
+   public void mouseEntered(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mouseExited(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mousePressed(MouseEvent e) {
+      /* Empty */
+   }
+
+   @Override
+   public void mouseReleased(MouseEvent e) {
+      /* Empty */
+   }
+
+/* Private instance variables */
+
+   private JComponent target;
+
+}

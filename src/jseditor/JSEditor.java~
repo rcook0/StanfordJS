@@ -1,0 +1,1056 @@
+/*
+ * File: JSEditor.java
+ * -------------------
+ * This class implements a text editor abstraction that presents the same
+ * interface in both Java and JavaScript.  The Java side is implemented
+ * as an extension to JTextPane; the JavaScript side is implemented as an
+ * extension to the Ace editor from Cloud9/Mozilla.
+ */
+
+package edu.stanford.cs.jseditor;
+
+import edu.stanford.cs.java2js.JSFrame;
+import edu.stanford.cs.java2js.JSPanel;
+import edu.stanford.cs.java2js.JSPlatform;
+import edu.stanford.cs.java2js.JSScrollPane;
+import edu.stanford.cs.java2js.JSTextSource;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Insets;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.event.ActionEvent;
+import java.awt.event.AdjustmentEvent;
+import java.awt.event.AdjustmentListener;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
+import java.util.ArrayList;
+import java.util.HashMap;
+import javax.swing.AbstractAction;
+import javax.swing.Action;
+import javax.swing.BorderFactory;
+import javax.swing.JScrollBar;
+import javax.swing.JTextPane;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.event.UndoableEditEvent;
+import javax.swing.event.UndoableEditListener;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+import javax.swing.undo.CannotUndoException;
+import javax.swing.undo.UndoableEdit;
+import javax.swing.undo.UndoManager;
+
+public class JSEditor extends JSPanel implements JSTextSource {
+
+/**
+ * Creates a new editor.
+ */
+
+   public JSEditor() {
+      adjustmentListeners = new ArrayList<AdjustmentListener>();
+      changeListeners = new ArrayList<ChangeListener>();
+      textPane = new JSETextPane(this);
+      scrollPane = new JSScrollPane();
+      scrollPane.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+      scrollPane.setViewportView(textPane);
+      JScrollBar scrollBar = scrollPane.getVerticalScrollBar();
+      JSScrollBarListener listener = new JSScrollBarListener(this, scrollBar);
+      scrollBar.addAdjustmentListener(listener);
+      setLayout(new BorderLayout());
+      add(scrollPane, BorderLayout.CENTER);
+      setBorder(BorderFactory.createLineBorder(Color.BLACK));
+      pathname = null;
+      tabSize = DEFAULT_TAB_SIZE;
+      setFont(DEFAULT_FONT);
+      setMargin(DEFAULT_MARGIN);
+      setLineWrap(DEFAULT_LINE_WRAP);
+      setOpaque(false);
+      colorAttributes = new HashMap<Color,SimpleAttributeSet>();
+      textPane.addFocusListener(new JSEditorFocusListener(this));
+      findAndReplaceDialog = null;
+      frame = null;
+      scrollTarget = DEFAULT_SCROLL_TARGET;
+      needsSaving = false;
+      undoable = true;
+      undoHandler = new JSEditorUndoHandler(this);
+      textPane.getDocument().addUndoableEditListener(undoHandler);
+   }
+
+   public void setTabSize(int columns) {
+      tabSize = columns;
+      updateTabStops();
+   }
+
+/**
+ * Sets a uniform margin around the text in the editor.
+ *
+ * @param pixels The number of pixels in the margin
+ */
+
+   public void setMargin(int pixels) {
+      setMargin(new Insets(pixels, pixels, pixels, pixels));
+   }
+
+/**
+ * Sets the margins of the text editor according to the
+ * <code>insets</code> structure.
+ *
+ * @param insets An <code>Insets</code> object specifying all four margins
+ */
+
+   public void setMargin(Insets insets) {
+      textPane.setMargin(insets);
+   }
+
+/**
+ * Returns the margins of the text editor as an <code>Insets</code> object.
+ *
+ * @return An <code>Insets</code> object specifying all four margins
+ */
+
+   public Insets getMargin() {
+      return textPane.getMargin();
+   }
+
+/**
+ * Adds a background highlight on the specified line.
+ *
+ * @param line The line number (1 based)
+ * @param color The color of the highlight
+ * @return An identifier that can be used to remove the highlight
+ */
+
+   public HighlighterKey addBackgroundHighlight(int line, Color color) {
+      int p1 = getLineStart(line);
+      int p2 = getLineStart(line + 1);
+      return addBackgroundHighlight(p1, p2, color);
+   }
+
+/**
+ * Adds a background highlight on the specified range.
+ *
+ * @param p1 The offset of the first character
+ * @param p2 The offset of the character following the range
+ * @param color The color of the highlight
+ * @return An identifier that can be used to remove the highlight
+ */
+
+   public HighlighterKey addBackgroundHighlight(int p1, int p2, Color color) {
+      return textPane.addBackgroundHighlight(p1, p2, color);
+   }
+
+/**
+ * Removes the background highlight associated with the key.
+ *
+ * @param key The key returned by <code>addBackgroundHighlight</code>
+ */
+
+   public void removeBackgroundHighlight(HighlighterKey key) {
+      textPane.removeBackgroundHighlight(key);
+   }
+
+/**
+ * Requests that the focus be transferred to the editor pane.
+ */
+
+   @Override
+   public void requestFocus() {
+      if (textPane != null) textPane.requestFocus();
+   }
+
+/**
+ * Sets the font for the editor.
+ *
+ * @param font The new font
+ */
+
+   @Override
+   public void setFont(Font font) {
+      super.setFont(font);
+      if (textPane != null) textPane.setFont(font);
+      updateTabStops();
+   }
+
+/**
+ * Gets the cursor position in the editor.
+ *
+ * @return The cursor position
+ */
+
+   public int getCursorPosition() {
+      return textPane.getCaretPosition();
+   }
+
+/**
+ * Sets the cursor position in the editor.
+ *
+ * @param offset The new cursor position
+ */
+
+   public void setCursorPosition(int offset) {
+      textPane.setCaretPosition(offset);
+   }
+
+/**
+ * Selects the specified range of text.
+ *
+ * @param start The first index of the text selection
+ * @param end The first index past the end of the text selection
+ */
+
+   public void select(int start, int end) {
+      textPane.setCaretPosition(start);
+      textPane.moveCaretPosition(end);
+      textPane.repaint();
+   }
+
+/**
+ * Sets the text for the editor.
+ *
+ * @param text The new text, which replaces the old contents
+ */
+
+   public void setText(String text) {
+      textPane.setText(text);
+   }
+
+/**
+ * Returns the contents of the editor as a string.
+ *
+ * @return The contents of the editor
+ */
+
+   @Override
+   public String getText() {
+      return textPane.getText();
+   }
+
+/**
+ * Pops up the find-and-replace dialog.
+ */
+
+   public void showFindAndReplaceDialog() {
+      if (findAndReplaceDialog == null) {
+         findAndReplaceDialog = createFindAndReplaceDialog();
+         findAndReplaceDialog.centerOnParent();
+      }
+      findAndReplaceDialog.setVisible(true);
+   }
+
+/**
+ * Finds the next occurrence of the specified string in the buffer.
+ * If the string is found, <code>findNext</code> sets the selection
+ * around it and returns <code>true</code>.  If the string does not
+ * appear in the remainder of the buffer, <code>findNext</code>
+ * leaves the selection unchanged and returns <code>false</code>.
+ *
+ * @param str The search string
+ * @return A Boolean indicating whether the search succeeded
+ */
+
+   public boolean findNext(String str) {
+      String text = textPane.getText();
+      int pos = text.indexOf(str, textPane.getCaretPosition());
+      if (pos == -1) return false;
+      textPane.setCaretPosition(pos);
+      textPane.moveCaretPosition(pos + str.length());
+      textPane.repaint();
+      return true;
+   }
+
+/**
+ * Checks to make sure that the current selection is equal to the
+ * find string and then replaces it with the specified replacement.
+ * The method returns <code>true</code> is the replacement occurs.
+ *
+ * @param str The search string
+ * @param replacement The replacement string
+ * @return A Boolean indicating whether the replacement succeeded
+ */
+
+   public boolean replace(String str, String replacement) {
+      if (!str.equals(textPane.getSelectedText())) return false;
+      textPane.replaceSelection(replacement);
+      textPane.repaint();
+      return true;
+   }
+
+/**
+ * Replaces all occurrences of str with the specified replacement.
+ *
+ * @param str The search string
+ * @param replacement The replacement string
+ */
+
+   public void replaceAll(String str, String replacement) {
+      if (str.equals(textPane.getSelectedText())) {
+         textPane.replaceSelection(replacement);
+      }
+      while (findNext(str)) {
+         textPane.replaceSelection(replacement);
+      }
+      textPane.repaint();
+   }
+
+/**
+ * Records the surrounding frame for the editor.
+ *
+ * @param frame The <code>JSFrame</code> that surrounds the editor
+ */
+
+   public void setFrame(JSFrame frame) {
+      this.frame = frame;
+   }
+
+/**
+ * Returns the surrounding frame for the editor.
+ *
+ * @return The <code>JSFrame</code> that surrounds the editor
+ */
+
+   public JSFrame getFrame() {
+      return frame;
+   }
+
+/**
+ * Sets the pathname associated with this editor
+ *
+ * @param pathname The pathname for the file in this editor
+ */
+
+   public void setPathname(String pathname) {
+      this.pathname = pathname;
+   }
+
+/**
+ * Returns the pathname associated with this editor.
+ *
+ * @return The pathname for the file in this editor
+ */
+
+   public String getPathname() {
+      return pathname;
+   }
+
+/**
+ * Sets a flag indicating whether lines are wrapped.  This flag is
+ * <code>true</code> by default.
+ *
+ * @param flag A <code>boolean</code> indicating whether lines are wrapped
+ */
+
+   public void setLineWrap(boolean flag) {
+      textPane.setLineWrap(flag);
+      repaint();
+   }
+
+/**
+ * Returns the state of the line-wrap flag.
+ *
+ * @param The state of the line-wrap flag
+ */
+
+   public boolean getLineWrap() {
+      return textPane.getLineWrap();
+   }
+
+/**
+ * Sets the flag that indicates whether this file needs saving.
+ *
+ * @param flag The flag that indicates whether this file needs saving
+ */
+
+   public void setSaveNeeded(boolean flag) {
+      needsSaving = flag;
+   }
+
+/**
+ * Returns <code>true</code> if this file needs saving.
+ *
+ * @return
+ */
+
+   public boolean isSaveNeeded() {
+      return needsSaving;
+   }
+
+/**
+ * Sets the scroll target, which is the number of lines that must precede
+ * the current line when the editor window is scrolled to ensure that a
+ * line is visible.
+ *
+ * @param target The scroll target
+ */
+
+   public void setScrollTarget(int target) {
+      scrollTarget = target;
+   }
+
+/**
+ * Returns the scroll target.
+ *
+ * @return The scroll target
+ */
+
+   public int getScrollTarget() {
+      return scrollTarget;
+   }
+
+/**
+ * Returns the text of line <code>k</code>.  By convention, lines are
+ * numbered starting with 1.
+ *
+ * @param k The line number (1-based)
+ * @return The text of the program line, or <code>null</code> if out of range
+ */
+
+   public String getLine(int k) {
+      String[] lines = JSPlatform.splitLines(textPane.getText());
+      return (k > 0 && k <= lines.length) ? lines[k - 1] : null;
+   }
+
+/**
+ * Returns the line number corresponding to the specified offset.
+ *
+ * @param offset The offset in the file
+ * @return The line number (1-based) of that offset
+ */
+
+   public int getLineNumber(int offset) {
+      return textPane.getLineNumber(offset);
+   }
+
+/**
+ * Ensures that line <code>k</code> is visible in the window, scrolling the
+ * text if necessary.
+ *
+ * @param k The line number (1-based)
+ */
+
+   public void ensureLineVisible(int k) {
+      try {
+         int start = getLineStart(Math.max(1, k - scrollTarget));
+         int current = getLineStart(k);
+         Rectangle r = textPane.modelToView(start);
+         r.add(textPane.modelToView(current));
+         if (r != null) scrollPane.scrollRectToVisible(r);
+      } catch (BadLocationException ex) {
+        /* Empty */
+      }
+   }
+
+/**
+ * Returns the line height of the text editor, which may not match the font
+ * height on the JavaScript side.
+ *
+ * @return The line height of the text editor
+ */
+
+   public int getLineHeight() {
+      return textPane.getFontMetrics(textPane.getFont()).getHeight();
+   }
+
+/**
+ * Returns the font metrics for the text pane.
+ *
+ * @return The font metrics for the text pane
+ */
+
+   public FontMetrics getTextPaneMetrics() {
+      return textPane.getFontMetrics(textPane.getFont());
+   }
+
+/**
+ * Returns the closest offset position to the (x, y) position in the window.
+ * This method takes into account the scrollbar setting.
+ *
+ * @param pt The coordinates in the viewport
+ */
+
+   public int pointToOffset(Point pt) {
+      Point corner = scrollPane.getViewPosition();
+      return textPane.viewToModel(new Point(pt.x + corner.x, pt.y + corner.y));
+   }
+
+/**
+ * Returns the view coordinates of the beginning of the character at the
+ * specified index position in the text.
+ *
+ * @param index The character position
+ * @return The coordinates of the specified character
+ */
+
+   public Point offsetToPoint(int index) {
+      try {
+         Point corner = scrollPane.getViewPosition();
+         Rectangle r = textPane.modelToView(index);
+         FontMetrics fm = textPane.getFontMetrics(textPane.getFont());
+         return new Point(r.x - corner.x, r.y - corner.y + fm.getAscent());
+      } catch (BadLocationException ex) {
+         throw new RuntimeException(ex);
+      }
+   }
+
+/**
+ * Returns the line number of the top line in the view, which may be only
+ * partially visible.
+ *
+ * @return The line number (1-based) of the top view line
+ */
+
+   public int getTopLine() {
+      Point corner = scrollPane.getViewPosition();
+      return getLineNumber(textPane.viewToModel(corner));
+   }
+
+/**
+ * Sets the flag that determines whether edits are undoable.  This flag needs
+ * to be disabled when processing syntax highlighting.
+ *
+ * @param flag The value <code>true</code> if edits are undoable
+ */
+
+   public void setUndoableFlag(boolean flag) {
+      undoable = flag;
+   }
+
+/**
+ * Gets the flag that determines whether edits are undoable.
+ *
+ * @return The value <code>true</code> if edits are undoable
+ */
+
+   public boolean getUndoableFlag() {
+      return undoable;
+   }
+
+/**
+ * Sets the editor mode.  At present, the mode is used only by the
+ * <code>ProgramEditor</code> subclass.
+ *
+ * @param mode The editor mode
+ */
+
+   public void setEditorMode(EditorMode mode) {
+      this.mode = mode;
+   }
+
+/**
+ * Gets the editor mode.  At present, the mode is used only by the
+ * <code>ProgramEditor</code> subclass.
+ *
+ * @return The editor mode
+ */
+
+   public EditorMode getEditorMode() {
+      return mode;
+   }
+
+/**
+ * Sets the color of a specific range of text.
+ *
+ * @param p1 The offset of the first character
+ * @param p2 The offset of the character following the range
+ * @param color The new color for the range
+ */
+
+   public void setTextColor(int p1, int p2, Color color) {
+      SimpleAttributeSet aset = colorAttributes.get(color);
+      if (aset == null) {
+         aset = new SimpleAttributeSet();
+         aset.addAttribute(StyleConstants.Foreground, color);
+         colorAttributes.put(color, aset);
+      }
+      StyledDocument doc = textPane.getStyledDocument();
+      doc.setCharacterAttributes(p1, p2 - p1, aset, true);
+   }
+
+/**
+ * Returns the starting index of line <code>k</code>.
+ *
+ * @param k The line number (1-based)
+ * @return The start offset of line <code>k</code>
+ */
+
+   public int getLineStart(int k) {
+      return getLineRange(k).getStart();
+   }
+
+/**
+ * Returns a <code>OffsetRange</code> structure for line <code>k</code>.
+ *
+ * @param k The line number (1-based)
+ * @return A <code>OffsetRange</code> structure with start and end offsets
+ */
+
+   public OffsetRange getLineRange(int k) {
+      String text = textPane.getText();
+      int n = text.length();
+      int start = 0;
+      int lineNumber = 1;
+      boolean started = (k == 1);
+      for (int i = 0; i < n; i++) {
+         char ch = text.charAt(i);
+         boolean eol = ch == '\n' || ch == '\r';
+         if (eol) {
+            if (started) return new OffsetRange(start, i);
+            int skipChar = '\n' + '\r' - ch;
+            if (i < n - 1 && text.charAt(i + 1) == skipChar) i++;
+            lineNumber++;
+            if (lineNumber == k) {
+               start = i + 1;
+               started = true;
+            }
+         }
+      }
+      return new OffsetRange(start, n);
+   }
+
+/**
+ * Creates a marker at the specified offset position.
+ *
+ * @param The offset in the file
+ * @return A marker at that position
+ */
+
+   public Marker createMarker(int offset) {
+      return textPane.createMarker(offset);
+   }
+
+/**
+ * Adds a listener that responds to adjustments in the editor scrollbar.
+ *
+ * @param listener The <code>AdjustmentListener</code> object
+ */
+
+   public void addAdjustmentListener(AdjustmentListener listener) {
+      adjustmentListeners.add(listener);
+   }
+
+/**
+ * Removes an adjustment listener.
+ *
+ * @param listener The <code>AdjustmentListener</code> object
+ */
+
+   public void removeAdjustmentListener(AdjustmentListener listener) {
+      adjustmentListeners.remove(listener);
+   }
+
+/**
+ * Fires the adjustment listeners associated with the scrollbar.
+ */
+
+   public void fireAdjustmentListeners(AdjustmentEvent e) {
+      for (AdjustmentListener listener : adjustmentListeners) {
+         listener.adjustmentValueChanged(e);
+      }
+   }
+
+/**
+ * Adds a listener that responds to changes in the editor text.
+ *
+ * @param listener The <code>ChangeListener</code> object
+ */
+
+   public void addChangeListener(ChangeListener listener) {
+      changeListeners.add(listener);
+   }
+
+/**
+ * Removes a change listener.
+ *
+ * @param listener The <code>ChangeListener</code> object
+ */
+
+   public void removeChangeListener(ChangeListener listener) {
+      changeListeners.remove(listener);
+   }
+
+/**
+ * Fires the change listeners associated with this editor.
+ */
+
+   public void fireChangeListeners() {
+      for (ChangeListener listener : changeListeners) {
+         listener.stateChanged(new ChangeEvent(this));
+      }
+   }
+
+   public AbstractAction getUndoAction() {
+      return undoHandler.getUndoAction();
+   }
+
+   public AbstractAction getRedoAction() {
+      return undoHandler.getRedoAction();
+   }
+
+   public void printDebugData() {
+      System.out.println("caret = " + textPane.getCaretPosition());
+      System.out.println("selection = " + textPane.getSelectedText());
+   }
+
+/* Protected methods */
+
+/**
+ * Creates the find-and-replace dialog used for this editor.
+ */
+
+   protected FindAndReplaceDialog createFindAndReplaceDialog() {
+      return new FindAndReplaceDialog(this);
+   }
+
+/* Private methods */
+
+   private void updateTabStops() {
+      if (textPane == null) return;
+      Font font = textPane.getFont();
+      int tabWidth = tabSize * textPane.getFontMetrics(font).stringWidth(" ");
+      textPane.setTabs(tabWidth);
+   }
+
+/* Constants */
+
+   public static final Font DEFAULT_FONT = Font.decode("Monospaced-Bold-12");
+   public static final boolean DEFAULT_LINE_WRAP = true;
+   public static final int DEFAULT_MARGIN = 2;
+   public static final int DEFAULT_SCROLL_TARGET = 2;
+   public static final int DEFAULT_TAB_SIZE = 3;
+
+/* Private instance variables */
+
+   private ArrayList<AdjustmentListener> adjustmentListeners;
+   private ArrayList<ChangeListener> changeListeners;
+   private EditorMode mode;
+   private FindAndReplaceDialog findAndReplaceDialog;
+   private HashMap<Color,SimpleAttributeSet> colorAttributes;
+   private JSETextPane textPane;
+   private JSFrame frame;
+   private JSScrollPane scrollPane;
+   private JSEditorUndoHandler undoHandler;
+   private String pathname;
+   private boolean needsSaving;
+   private boolean undoable;
+   private int scrollTarget;
+   private int tabSize;
+
+}
+
+/* Package class to implement an extended JTextPane */
+
+class JSETextPane extends JTextPane implements DocumentListener {
+
+   public JSETextPane(JSEditor editor) {
+      this.editor = editor;
+      highlighters = new HashMap<Color,Highlighter.HighlightPainter>();
+      doc = getStyledDocument();
+      style = doc.getLogicalStyle(0);
+      doc.addDocumentListener(this);
+      highlighter = new LineHighlighter();
+      setHighlighter(highlighter);
+      setOpaque(true);
+   }
+
+   @Override
+   public boolean getScrollableTracksViewportWidth() {
+      return lineWrap || getUI().getPreferredSize(this).width <=
+                         getParent().getSize().width;
+   }
+
+   public HighlighterKey addBackgroundHighlight(int p1, int p2, Color color) {
+      Object id = null;
+      try {
+         id = highlighter.addHighlight(p1, p2, getPainterForColor(color));
+      } catch (BadLocationException ex) {
+         /* Empty */
+      }
+      repaint();
+      return (id == null) ? null : new HighlighterKey(id);
+   }
+
+   public void removeBackgroundHighlight(HighlighterKey key) {
+new Throwable().printStackTrace();
+      highlighter.removeHighlight(key.getTag());
+   }
+
+   public Marker createMarker(int offset) {
+      try {
+         return new Marker(doc.createPosition(offset));
+      } catch (BadLocationException ex) {
+         throw new RuntimeException(ex.toString());
+      }
+   }
+
+   public int getOffset(int x, int y) {
+      return viewToModel(new Point(x, y));
+   }
+
+   public int getLineNumber(int offset) {
+      String text = getText();
+      int p = 0;
+      int lineNumber = 0;
+      while (p <= offset) {
+         p = text.indexOf("\n", p) + 1;
+         lineNumber++;
+         if (p == 0) break;
+      }
+      return lineNumber;
+   }
+
+   public int getLineStart(int line) {
+      String text = getText();
+      int p = 0;
+      while (--line > 0) {
+         p = text.indexOf("\n", p) + 1;
+         if (p == 0) return text.length();
+      }
+      return p;
+   }
+
+   public void setLineWrap(boolean flag) {
+      this.lineWrap = flag;
+   }
+
+   public boolean getLineWrap() {
+      return lineWrap;
+   }
+
+   public void setTabs(int tabWidth) {
+      FixedTabSet tabSet = new FixedTabSet(tabWidth);
+      style.addAttribute(StyleConstants.TabSet, tabSet);
+   }
+
+   @Override
+   public void changedUpdate(DocumentEvent e) {
+      editor.setSaveNeeded(true);
+      editor.fireChangeListeners();
+   }
+
+   @Override
+   public void insertUpdate(DocumentEvent e) {
+      editor.fireChangeListeners();
+   }
+
+   @Override
+   public void removeUpdate(DocumentEvent e) {
+      editor.fireChangeListeners();
+   }
+
+   private Highlighter.HighlightPainter getPainterForColor(Color color) {
+      Highlighter.HighlightPainter painter = highlighters.get(color);
+      if (painter == null) {
+         painter = new DefaultHighlighter.DefaultHighlightPainter(color);
+         highlighters.put(color, painter);
+      }
+      return painter;
+   }
+
+/* Private instance variables */
+
+   private HashMap<Color,Highlighter.HighlightPainter> highlighters;
+   private JSEditor editor;
+   private LineHighlighter highlighter;
+   private Style style;
+   private StyledDocument doc;
+   private boolean lineWrap;
+
+}
+
+/* Package class to listen for scrollbar changes */
+
+class JSScrollBarListener implements AdjustmentListener {
+
+   public JSScrollBarListener(JSEditor editor, JScrollBar scrollBar) {
+      this.editor = editor;
+      this.scrollBar = scrollBar;
+   }
+
+/* ChangeListener */
+
+   @Override
+   public void adjustmentValueChanged(AdjustmentEvent e) {
+      e = new AdjustmentEvent(scrollBar, e.getID(), e.getAdjustmentType(),
+                              e.getValue());
+      editor.fireAdjustmentListeners(e);
+   }
+
+   private JSEditor editor;
+   private JScrollBar scrollBar;
+
+}
+
+/* Package class to respond to focus changes */
+
+class JSEditorFocusListener implements FocusListener {
+
+   public JSEditorFocusListener(JSEditor editor) {
+      this.editor = editor;
+   }
+
+/* FocusListener */
+
+   @Override
+   public void focusGained(FocusEvent e) {
+      e = new FocusEvent(editor, e.getID());
+      FocusListener[] listeners = editor.getFocusListeners();
+      for (FocusListener listener : listeners) {
+         listener.focusGained(e);
+      }
+   }
+
+   @Override
+   public void focusLost(FocusEvent e) {
+      e = new FocusEvent(editor, e.getID());
+      FocusListener[] listeners = editor.getFocusListeners();
+      for (FocusListener listener : listeners) {
+         listener.focusLost(e);
+      }
+   }
+
+/* Private instance variables */
+
+   private JSEditor editor;
+
+}
+
+class JSEditorUndoHandler implements UndoableEditListener {
+
+   public JSEditorUndoHandler(JSEditor editor) {
+      this.editor = editor;
+      undoManager = new JSEditorUndoManager();
+      undoAction = new JSEditorUndoAction(this);
+      redoAction = new JSEditorRedoAction(this);
+   }
+
+   @Override
+   public void undoableEditHappened(UndoableEditEvent e) {
+      if (editor.getUndoableFlag()) {
+//         UndoableEdit lastEdit = undoManager.getLastEdit();
+//         if (isAddition(lastEdit) && isAddition(e.getEdit())) {
+//            lastEdit.addEdit(e.getEdit());
+//         } else {
+              undoManager.addEdit(e.getEdit());
+//         }
+         undoAction.update();
+         redoAction.update();
+      }
+   }
+
+   public JSEditorUndoManager getUndoManager() {
+      return undoManager;
+   }
+
+   public JSEditorUndoAction getUndoAction() {
+      return undoAction;
+   }
+
+   public JSEditorRedoAction getRedoAction() {
+      return redoAction;
+   }
+
+// Fix this facility
+
+   protected boolean isAddition(UndoableEdit edit) {
+      return edit != null && edit.getPresentationName().endsWith("addition");
+   }
+
+/* Private instance variables */
+
+   private JSEditor editor;
+   private JSEditorUndoAction undoAction;
+   private JSEditorRedoAction redoAction;
+   private JSEditorUndoManager undoManager;
+
+}
+
+class JSEditorUndoManager extends UndoManager {
+
+   public UndoableEdit getLastEdit() {
+      return editToBeUndone();
+   }
+
+}
+
+class JSEditorUndoAction extends AbstractAction {
+
+   public JSEditorUndoAction(JSEditorUndoHandler handler) {
+      super("Undo");
+      setEnabled(false);
+      this.handler = handler;
+      manager = handler.getUndoManager();
+   }
+
+   @Override
+   public void actionPerformed(ActionEvent e) {
+      try {
+         manager.undo();
+      } catch (CannotUndoException ex) {
+         /* Empty */
+      }
+      update();
+      handler.getRedoAction().update();
+   }
+
+   protected void update() {
+      if (manager.canUndo()) {
+         setEnabled(true);
+         putValue(Action.NAME, manager.getUndoPresentationName());
+      } else {
+         setEnabled(false);
+         putValue(Action.NAME, "Undo");
+      }
+   }
+
+/* Private instance variables */
+
+   private JSEditorUndoHandler handler;
+   private JSEditorUndoManager manager;
+
+}
+
+class JSEditorRedoAction extends AbstractAction {
+
+   public JSEditorRedoAction(JSEditorUndoHandler handler) {
+      super("Redo");
+      setEnabled(false);
+      this.handler = handler;
+      manager = handler.getUndoManager();
+   }
+
+   @Override
+   public void actionPerformed(ActionEvent e) {
+      try {
+         manager.redo();
+      } catch (CannotUndoException ex) {
+         /* Empty */
+      }
+      update();
+      handler.getUndoAction().update();
+   }
+
+   protected void update() {
+      if (manager.canRedo()) {
+         setEnabled(true);
+         putValue(Action.NAME, manager.getRedoPresentationName());
+      } else {
+         setEnabled(false);
+         putValue(Action.NAME, "Undo");
+      }
+   }
+
+/* Private instance variables */
+
+   private JSEditorUndoHandler handler;
+   private JSEditorUndoManager manager;
+
+}

@@ -1,0 +1,201 @@
+/*
+ * File: JSDialog.java
+ * -------------------
+ * This class is the root of a dialog hierarchy that runs in both Java
+ * and JavaScript.
+ */
+
+package edu.stanford.cs.java2js;
+
+import java.awt.Component;
+import java.awt.Point;
+import java.awt.Frame;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import javax.swing.JDialog;
+import javax.swing.SwingUtilities;
+
+/**
+ * This class is used to implement dialogs that can be simulated
+ * on the JavaScript side.  Calling <code>setVisible(true)</code> on a
+ * <code>JSDialog</code> causes it to pop up.  The specific dialog
+ * implementation must then either call <code>setVisible(false)</code>
+ * to dismiss the dialog (typically triggered by the <code>Cancel</code>
+ * button) or invoke the <code>execute</code> method (typically
+ * triggered by a button with a label like <code>OK</code>).  By
+ * default, the <code>execute</code> method sends action events to
+ * listeners registered on the dialog, but subclasses can override
+ * this method to implement more complex actions.
+ */
+
+public class JSDialog extends JDialog {
+
+/**
+ * Creates a new <code>JSDialog</code> that is positioned relative to
+ * <code>target</code>.  The dialog is initialized to be modal and
+ * undecorated.
+ *
+ * @param target The component used as the local coordinate space
+ */
+
+   public JSDialog(Component target) {
+      this(target, true, (Frame) SwingUtilities.getWindowAncestor(target));
+   }
+
+/**
+ * Creates a new <code>JSDialog</code> that is positioned relative to
+ * <code>target</code>.  The second parameter controls whether the
+ * dialog is modal.
+ *
+ * @param target The component used as the local coordinate space
+ * @param isModal Indicates whether the dialog is modal
+ */
+
+   public JSDialog(Component target, boolean isModal) {
+      this(target, isModal, (Frame) SwingUtilities.getWindowAncestor(target));
+   }
+
+/**
+ * Executes the action indicated by the dialog.  The default action is
+ * to dismiss the dialog and then call its action listeners, but clients
+ * can override this method to perform more sophisticated operations.
+ *
+ * @param cmd The action command
+ */
+
+   public void execute(String cmd) {
+      setVisible(false);
+      ActionEvent e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, cmd);
+      fireActionListeners(e);
+   }
+
+/**
+ * Adds an action listener to this dialog.
+ *
+ * @param listener The action listener to add
+ */
+
+   public void addActionListener(ActionListener listener) {
+      listeners.add(listener);
+   }
+
+/**
+ * Remove an action listener to this dialog.
+ *
+ * @param listener The action listener to remove
+ */
+
+   public void removeActionListener(ActionListener listener) {
+      listeners.remove(listener);
+   }
+
+/**
+ * Dispatches the action event to the listeners on the list.
+ *
+ * @param e The action event
+ */
+
+   public void fireActionListeners(ActionEvent e) {
+      JSEvent.dispatchList(listeners, e);
+   }
+
+/**
+ * Gets the component used as the local coordinate space for this dialog.
+ *
+ * @return The component used as the local coordinate space
+ */
+
+   public Component getTarget() {
+      return target;
+   }
+
+/**
+ * Gets the local coordinates of a point in the window space.
+ *
+ * @param pt The window coordinates of the point
+ * @return The corresponding point in the coordinates space of the target
+ */
+
+   public Point getTargetCoordinates(Point pt) {
+      int x = pt.x;
+      int y = pt.y;
+      Component c = target;
+      while (c != null && c != frame) {
+         x -= c.getX();
+         y -= c.getY();
+         c = c.getParent();
+      }
+      return new Point(x, y);
+   }
+
+/**
+ * Gets the window coordinates of a point in the target space.
+ *
+ * @param pt The local coordinates of the point in the target
+ * @return The corresponding point in the space of the window
+ */
+
+   public Point getWindowCoordinates(Point pt) {
+      int x = pt.x;
+      int y = pt.y;
+      Component c = target;
+      while (c != null && c != frame) {
+         x += c.getX();
+         y += c.getY();
+         c = c.getParent();
+      }
+      return new Point(x, y);
+   }
+
+/**
+ * Centers the dialog on its parent.
+ */
+
+   public void centerOnParent() {
+      setLocationRelativeTo(target);
+   }
+
+/**
+ * Sets the title for the dialog.  Setting the title to <code>null</code>
+ * removes the dialog bar completely.
+ *
+ * @param title The title for the dialog
+ */
+
+   @Override
+   public void setTitle(String title) {
+      setUndecorated(title == null);
+      super.setTitle(title);
+   }
+
+/**
+ * Signals an error in the dialog.  The base class throws a runtime exception.
+ * Subclasses can override this definition to implement more sophisticated
+ * error handling.
+ *
+ * @param msg The error message
+ */
+
+   public void signalError(String msg) {
+      throw new RuntimeException(msg);
+   }
+
+/* Private methods */
+
+   private JSDialog(Component target, boolean isModal, Frame frame) {
+      super(frame, isModal);
+      this.target = target;
+      this.frame = frame;
+      listeners = new ArrayList<ActionListener>();
+      setUndecorated(true);
+      setLocationRelativeTo(frame);
+   }
+
+/* Private instance variables */
+
+   public ArrayList<ActionListener> listeners;
+   public Component target;
+   public Frame frame;
+
+}
