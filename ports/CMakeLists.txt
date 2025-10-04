@@ -38,3 +38,8 @@ enable_testing()
 add_executable(cpp_tests tests/cpp/test_main.cpp)
 target_link_libraries(cpp_tests PRIVATE sjs_core)
 add_test(NAME cpp_tests COMMAND cpp_tests)
+
+
+add_executable(test_kernel_sanity tests/cpp/test_kernel_sanity.cpp)
+target_link_libraries(test_kernel_sanity PRIVATE sjs_core)
+add_test(NAME test_kernel_sanity COMMAND test_kernel_sanity)
