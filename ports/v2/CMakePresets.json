@@ -1,0 +1,48 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default-release",
+      "displayName": "Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-avx2",
+      "displayName": "Release (AVX2/FMA)",
+      "inherits": "default-release",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O3 -march=x86-64-v3 -mavx2 -mfma"
+      }
+    },
+    {
+      "name": "relwithdebinfo-avx2",
+      "displayName": "RelWithDebInfo (AVX2/FMA)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/relwithdebinfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-O3 -g -march=x86-64-v3 -mavx2 -mfma"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build",
+      "configurePreset": "default-release"
+    },
+    {
+      "name": "build-avx2",
+      "configurePreset": "release-avx2"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ctest",
+      "configurePreset": "default-release"
+    }
+  ]
+}
